@@ -25,9 +25,9 @@ def set_custom_aggrid_css() -> None:
     <style>
     /* Shrink sidebar width (class name may change in Streamlit updates) */
     section[data-testid="stSidebar"] {
-        min-width: 180px !important;
-        max-width: 220px !important;
-        width: 180px !important;
+        min-width: 220px !important;
+        max-width: 280px !important;
+        width: 220px !important;
     }
     /* Target AgGrid header cells specifically */
     .ag-header-cell-text {
