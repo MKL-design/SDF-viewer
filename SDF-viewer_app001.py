@@ -8,6 +8,7 @@ from rdkit.Chem import PandasTools
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 from streamlit.runtime.uploaded_file_manager import UploadedFile
+import re
 
 def set_custom_aggrid_css() -> None:
     """Inject custom CSS for AgGrid header text wrapping and right alignment."""
@@ -79,15 +80,59 @@ def mol_to_svg_str(smiles: str) -> str:
     svg = drawer.GetDrawingText().replace("\n", "")
     return f"<div>{svg}</div>"
 
+def _validate_query(query: str, df: pd.DataFrame) -> bool:
+    """Validate query string to prevent unsafe expressions."""
+    # disallow obviously dangerous constructs
+    if re.search(r"__|\b(import|exec|eval|os|sys|subprocess)\b", query):
+        return False
+
+    # allow only simple comparison characters and column names
+    allowed = re.compile(r"^[\w\s\&\|\~\<\>\=\!\(\)\[\]\,\.\'\"]+$")
+    if not allowed.fullmatch(query):
+        return False
+
+    tokens = re.findall(r"`?([A-Za-z_][A-Za-z0-9_]*)`?", query)
+    keywords = {"and", "or", "not", "True", "False"}
+    for token in tokens:
+        if token not in df.columns and token not in keywords:
+            # ignore numeric-like tokens
+            try:
+                float(token)
+            except ValueError:
+                return False
+    return True
+
+
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
-    """Allow filtering of DataFrame using query input."""
+    """Allow filtering of DataFrame using validated query input."""
     st.subheader("Filter Table")
-    query = st.text_input("Filter Query (e.g. MW > 300 & LogP < 5):")
-    try:
-        if query:
-            df = df.query(query)
-    except Exception as e:
-        st.error(f"Filter error: {e}")
+
+    with st.expander("Build filter"):
+        simple_col = st.selectbox(
+            "Column", [c for c in df.columns if c not in ["Idx", "Structure"]]
+        )
+        simple_op = st.selectbox("Operation", [">", "<", ">=", "<=", "==", "!="])
+        simple_val = st.text_input("Value")
+        build_query = st.button("Apply Filter")
+
+    manual_query = st.text_input(
+        "Custom Query (optional, e.g. MW > 300 & LogP < 5):", key="custom_query"
+    )
+
+    query = ""
+    if build_query and simple_val:
+        query = f"`{simple_col}` {simple_op} {simple_val}"
+    elif manual_query:
+        query = manual_query
+
+    if query:
+        if _validate_query(query, df):
+            try:
+                df = df.query(query)
+            except Exception as e:
+                st.error(f"Filter error: {e}")
+        else:
+            st.error("Invalid or unsafe query.")
     return df
 
 def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
