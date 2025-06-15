@@ -335,22 +335,25 @@ def main() -> None:
 
     # Slider for row paging - only in main window
     max_start = max(n - page_size + 1, 1)
-    start = st.slider(
-        "Starting row",
-        min_value=1,
-        max_value=max_start,
-        value=1,
-        help=f"Show {page_size} rows starting here",
-    )
+    slider_col, table_col = st.columns([1, 5])
+    with slider_col:
+        start = st.slider(
+            "Starting row",
+            min_value=1,
+            max_value=max_start,
+            value=1,
+            help=f"Show {page_size} rows starting here",
+            orientation="horizontal",
+        )
     end = min(start + page_size - 1, n)
 
     # Only generate SVGs for visible window
     df_page = df_filtered.iloc[start - 1 : end].copy()
     df_page = prepare_dataframe(df_page)
-
-    st.subheader(f"Rows {start}–{end} of {n}")
-    grid_options = build_aggrid_options(df_page)
-    display_aggrid_table(df_page, grid_options)
+    with table_col:
+        st.subheader(f"Rows {start}–{end} of {n}")
+        grid_options = build_aggrid_options(df_page)
+        display_aggrid_table(df_page, grid_options)
 
 
 if __name__ == "__main__":
