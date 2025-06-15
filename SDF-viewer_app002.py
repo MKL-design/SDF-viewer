@@ -1,3 +1,11 @@
+"""Streamlit application for viewing large SDF/CSV files.
+
+Only a single slider is used for paging through the data. Molecule drawings are
+cached using an LRU cache so that only a limited number of SVGs are stored in
+memory at any time.
+"""
+
+from functools import lru_cache
 from io import BytesIO
 
 import pandas as pd
@@ -8,6 +16,7 @@ from rdkit.Chem.Draw import rdMolDraw2D
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 from streamlit.runtime.uploaded_file_manager import UploadedFile
+
 
 def set_custom_aggrid_css() -> None:
     """Inject custom CSS for AgGrid header text wrapping, right alignment, and shrink sidebar width."""
@@ -52,17 +61,24 @@ def set_custom_aggrid_css() -> None:
         unsafe_allow_html=True,
     )
 
-@st.cache_data
-def mol_to_svg_str(smiles: str) -> str:
-    """Convert a SMILES string to an HTML-embeddable SVG."""
+
+@lru_cache(maxsize=500)
+def _cached_svg(smiles: str) -> str:
+    """Return an SVG string for the given SMILES structure."""
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return ""
     drawer = rdMolDraw2D.MolDraw2DSVG(120, 100)
     drawer.DrawMolecule(mol)
     drawer.FinishDrawing()
-    svg = drawer.GetDrawingText().replace("\n", "")
-    return f"<div>{svg}</div>"
+    return drawer.GetDrawingText().replace("\n", "")
+
+
+def mol_to_svg_str(smiles: str) -> str:
+    """Wrap the cached SVG in a div so AgGrid can render it."""
+    svg = _cached_svg(smiles)
+    return f"<div>{svg}</div>" if svg else ""
+
 
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -78,6 +94,7 @@ def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         st.sidebar.error(f"Filter error: {e}")
     return df
 
+
 def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     """
     Add index and structure columns and reorder for display.
@@ -92,6 +109,7 @@ def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
         df["SMILES"].apply(lambda smi: mol_to_svg_str(smi) if pd.notna(smi) else ""),
     )
     return df
+
 
 def get_svg_cellrenderer() -> JsCode:
     """
@@ -110,6 +128,7 @@ def get_svg_cellrenderer() -> JsCode:
         }
     """
     )
+
 
 def build_aggrid_options(df: pd.DataFrame) -> dict:
     """
@@ -225,6 +244,7 @@ def build_aggrid_options(df: pd.DataFrame) -> dict:
 
     return grid_options
 
+
 def display_aggrid_table(df: pd.DataFrame, grid_options: dict) -> None:
     """
     Render the DataFrame in AgGrid, left-aligned with custom header styling.
@@ -246,10 +266,13 @@ def display_aggrid_table(df: pd.DataFrame, grid_options: dict) -> None:
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
+
 @st.cache_data
 def load_data(file_bytes: bytes, file_name: str) -> pd.DataFrame:
-    """
-    Load SDF or CSV data from the uploaded file bytes.
+    """Load SDF or CSV data from the uploaded file bytes.
+
+    The result is cached by Streamlit so repeated navigation does not reload the
+    file from disk.
     """
     file_type = file_name.split(".")[-1].lower()
     try:
@@ -268,6 +291,7 @@ def load_data(file_bytes: bytes, file_name: str) -> pd.DataFrame:
         raise ValueError("No SMILES column found.")
     return df
 
+
 def setup_page() -> None:
     """
     Configure the Streamlit page and apply custom styling.
@@ -276,10 +300,12 @@ def setup_page() -> None:
     st.title("SDF/CSV Molecule Viewer with AgGrid")
     set_custom_aggrid_css()
 
+
 def main() -> None:
-    """
-    Main app logic: sidebar handles all user inputs except slider.
-    Main window holds only slider and AgGrid table.
+    """Run the Streamlit application.
+
+    Only a single slider controls pagination to provide smooth scrolling. The
+    sidebar contains all other inputs.
     """
     setup_page()
 
@@ -314,7 +340,7 @@ def main() -> None:
         min_value=1,
         max_value=max_start,
         value=1,
-        help=f"Show {page_size} rows starting here"
+        help=f"Show {page_size} rows starting here",
     )
     end = min(start + page_size - 1, n)
 
@@ -325,6 +351,7 @@ def main() -> None:
     st.subheader(f"Rows {start}–{end} of {n}")
     grid_options = build_aggrid_options(df_page)
     display_aggrid_table(df_page, grid_options)
+
 
 if __name__ == "__main__":
     main()
