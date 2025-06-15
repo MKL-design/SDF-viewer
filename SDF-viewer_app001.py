@@ -1,17 +1,19 @@
-import streamlit as st
-import pandas as pd
 from io import BytesIO
 
+import pandas as pd
+import streamlit as st
 from rdkit import Chem
-from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem import PandasTools
+from rdkit.Chem.Draw import rdMolDraw2D
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 
+
 def set_custom_aggrid_css() -> None:
     """Inject custom CSS for AgGrid header text wrapping and right alignment."""
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     /* Target AgGrid header cells specifically */
     .ag-header-cell-text {
@@ -65,7 +67,10 @@ def set_custom_aggrid_css() -> None:
         text-align: right !important;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 @st.cache_data
 def mol_to_svg_str(smiles: str) -> str:
@@ -79,6 +84,7 @@ def mol_to_svg_str(smiles: str) -> str:
     svg = drawer.GetDrawingText().replace("\n", "")
     return f"<div>{svg}</div>"
 
+
 def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Allow filtering of DataFrame using query input."""
     st.subheader("Filter Table")
@@ -90,6 +96,7 @@ def filter_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         st.error(f"Filter error: {e}")
     return df
 
+
 def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     """
     Add index and structure columns and reorder for display.
@@ -97,14 +104,20 @@ def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     """
     df = raw_df.copy()
     df.insert(0, "Idx", range(1, len(df) + 1))
-    df.insert(1, "Structure", df['SMILES'].apply(lambda smi: mol_to_svg_str(smi) if pd.notna(smi) else ""))
+    df.insert(
+        1,
+        "Structure",
+        df["SMILES"].apply(lambda smi: mol_to_svg_str(smi) if pd.notna(smi) else ""),
+    )
     return df
+
 
 def get_svg_cellrenderer() -> JsCode:
     """
     JavaScript cell renderer to correctly render HTML/SVG in AgGrid cells.
     """
-    return JsCode("""
+    return JsCode(
+        """
         class HtmlCellRenderer {
             init(params) {
                 this.eGui = document.createElement('div');
@@ -114,7 +127,9 @@ def get_svg_cellrenderer() -> JsCode:
                 return this.eGui;
             }
         }
-    """)
+    """
+    )
+
 
 def build_aggrid_options(df: pd.DataFrame) -> dict:
     """
@@ -123,71 +138,78 @@ def build_aggrid_options(df: pd.DataFrame) -> dict:
     gb = GridOptionsBuilder.from_dataframe(df)
 
     svg_cellrenderer = get_svg_cellrenderer()
-    
+
     # Index column
-    gb.configure_column("Idx", 
-                       header_name="Idx", 
-                       width=60,
-                       minWidth=60,
-                       maxWidth=60,
-                       pinned='left', 
-                       resizable=False, 
-                       headerClass="custom-header",
-                       wrapHeaderText=True,
-                       cellStyle={'textAlign': 'right'})  # Right align content
-    
+    gb.configure_column(
+        "Idx",
+        header_name="Idx",
+        width=60,
+        minWidth=60,
+        maxWidth=60,
+        pinned="left",
+        resizable=False,
+        headerClass="custom-header",
+        wrapHeaderText=True,
+        cellStyle={"textAlign": "right"},
+    )  # Right align content
+
     # Structure column - keep structure images left aligned for visual clarity
-    gb.configure_column("Structure", 
-                       header_name="Structure", 
-                       width=130,
-                       minWidth=130,
-                       maxWidth=130,
-                       resizable=False, 
-                       cellRenderer=svg_cellrenderer, 
-                       headerClass="custom-header",
-                       wrapHeaderText=True,
-                       cellStyle={'textAlign': 'center'})  # Center align structure images
-    
+    gb.configure_column(
+        "Structure",
+        header_name="Structure",
+        width=130,
+        minWidth=130,
+        maxWidth=130,
+        resizable=False,
+        cellRenderer=svg_cellrenderer,
+        headerClass="custom-header",
+        wrapHeaderText=True,
+        cellStyle={"textAlign": "center"},
+    )  # Center align structure images
+
     # All other columns - FORCE WIDTH TO 50px and right align
     for col in df.columns:
         if col not in ["Idx", "Structure"]:
-            gb.configure_column(col, 
-                              width=50,
-                              minWidth=50,
-                              maxWidth=200,  # Allow some expansion but start at 50
-                              flex=0,  # Disable flex sizing
-                              resizable=True, 
-                              headerClass="custom-header",
-                              wrapHeaderText=True,
-                              suppressSizeToFit=True,
-                              suppressAutoSize=True,
-                              cellStyle={'textAlign': 'right'},  # Right align content
-                              type='numericColumn')  # Use numeric type for consistent right alignment
+            gb.configure_column(
+                col,
+                width=50,
+                minWidth=50,
+                maxWidth=200,  # Allow some expansion but start at 50
+                flex=0,  # Disable flex sizing
+                resizable=True,
+                headerClass="custom-header",
+                wrapHeaderText=True,
+                suppressSizeToFit=True,
+                suppressAutoSize=True,
+                cellStyle={"textAlign": "right"},  # Right align content
+                type="numericColumn",
+            )  # Use numeric type for consistent right alignment
 
     # Configure default column properties with right alignment
     gb.configure_default_column(
-        wrapText=True, 
+        wrapText=True,
         suppressSizeToFit=True,
         suppressAutoSize=True,
         flex=0,  # Disable flex for all columns
-        cellStyle={'textAlign': 'right'}  # Right align all content by default
+        cellStyle={"textAlign": "right"},  # Right align all content by default
     )
-    
+
     # Build grid options
     grid_options = gb.build()
-    
+
     # Set row height and header height
-    grid_options['getRowHeight'] = JsCode("function(params) { return 100; }")
-    grid_options['headerHeight'] = 80
-    
+    grid_options["getRowHeight"] = JsCode("function(params) { return 100; }")
+    grid_options["headerHeight"] = 80
+
     # CRITICAL: These settings prevent all auto-sizing
-    grid_options['suppressColumnVirtualisation'] = True
-    grid_options['suppressAutoSize'] = True
-    grid_options['suppressSizeToFit'] = True
-    grid_options['skipHeaderOnAutoSize'] = True
-    
+    grid_options["suppressColumnVirtualisation"] = True
+    grid_options["suppressAutoSize"] = True
+    grid_options["suppressSizeToFit"] = True
+    grid_options["skipHeaderOnAutoSize"] = True
+
     # Force column definitions to override any auto-sizing AND set right alignment
-    grid_options['onGridReady'] = JsCode("""
+    grid_options["onGridReady"] = JsCode(
+        """
         function(params) {
             // Force column widths and right alignment after grid is ready
             const columnDefs = params.api.getColumnDefs();
@@ -218,15 +240,20 @@ def build_aggrid_options(df: pd.DataFrame) -> dict:
                 }
             });
         }
-    """)
-    
+    """
+    )
+
     return grid_options
+
 
 def display_aggrid_table(df: pd.DataFrame, grid_options: dict) -> None:
     """
     Render the DataFrame in AgGrid, left-aligned with custom header styling.
     """
-    st.markdown("<div style='display: flex; justify-content: flex-start;'>", unsafe_allow_html=True)
+    st.markdown(
+        "<div style='display: flex; justify-content: flex-start;'>",
+        unsafe_allow_html=True,
+    )
     AgGrid(
         df,
         gridOptions=grid_options,
@@ -234,32 +261,34 @@ def display_aggrid_table(df: pd.DataFrame, grid_options: dict) -> None:
         height=600,
         fit_columns_on_grid_load=False,  # CRITICAL: Keep this False
         reload_data=False,  # Change to False to prevent reloading
-        theme='streamlit',
-        update_mode='MANUAL',  # Use MANUAL instead of MODEL_CHANGED
-        columns_auto_size_mode=None  # Disable auto-sizing completely
+        theme="streamlit",
+        update_mode="MANUAL",  # Use MANUAL instead of MODEL_CHANGED
+        columns_auto_size_mode=None,  # Disable auto-sizing completely
     )
     st.markdown("</div>", unsafe_allow_html=True)
+
 
 @st.cache_data
 def load_data(file_bytes: bytes, file_name: str) -> pd.DataFrame:
     """Load SDF or CSV data from the uploaded file bytes."""
-    file_type = file_name.split('.')[-1].lower()
+    file_type = file_name.split(".")[-1].lower()
     try:
-        if file_type == 'sdf':
+        if file_type == "sdf":
             df = PandasTools.LoadSDF(
-                BytesIO(file_bytes), smilesName='SMILES', includeFingerprints=False
+                BytesIO(file_bytes), smilesName="SMILES", includeFingerprints=False
             )
-        elif file_type == 'csv':
+        elif file_type == "csv":
             df = pd.read_csv(BytesIO(file_bytes))
         else:
             raise ValueError("Unsupported file type.")
     except Exception as e:
         raise RuntimeError(f"Failed to load file: {e}") from e
 
-    if 'SMILES' not in df.columns:
+    if "SMILES" not in df.columns:
         raise ValueError("No SMILES column found.")
 
     return df
+
 
 def setup_page() -> None:
     """Configure the Streamlit page and apply custom styling."""
@@ -285,9 +314,12 @@ def process_uploaded_file(uploaded_file: UploadedFile) -> None:
 
 def main() -> None:
     setup_page()
-    uploaded_file = st.file_uploader("Upload a file (.sdf or .csv)", type=['sdf', 'csv'])
+    uploaded_file = st.file_uploader(
+        "Upload a file (.sdf or .csv)", type=["sdf", "csv"]
+    )
     if uploaded_file:
         process_uploaded_file(uploaded_file)
+
 
 if __name__ == "__main__":
     main()
