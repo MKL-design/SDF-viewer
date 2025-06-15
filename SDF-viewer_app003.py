@@ -23,11 +23,12 @@ def set_custom_aggrid_css() -> None:
     st.markdown(
         """
     <style>
-    /* Shrink sidebar width */
     section[data-testid="stSidebar"] {
-        min-width: 180px !important;
-        max-width: 220px !important;
-        width: 180px !important;
+        min-width: 220px !important;
+        max-width: 400px !important;
+        width: 280px !important;
+        resize: horizontal !important;
+        overflow: auto !important;
     }
     /* Pagination controls styling */
     .pagination-container {
