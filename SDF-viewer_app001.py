@@ -1,12 +1,15 @@
 import streamlit as st
 import pandas as pd
+from io import BytesIO
+
 from rdkit import Chem
 from rdkit.Chem.Draw import rdMolDraw2D
 from rdkit.Chem import PandasTools
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 
-def set_custom_aggrid_css():
+def set_custom_aggrid_css() -> None:
     """Inject custom CSS for AgGrid header text wrapping and right alignment."""
     st.markdown("""
     <style>
@@ -97,7 +100,7 @@ def prepare_dataframe(raw_df: pd.DataFrame) -> pd.DataFrame:
     df.insert(1, "Structure", df['SMILES'].apply(lambda smi: mol_to_svg_str(smi) if pd.notna(smi) else ""))
     return df
 
-def get_svg_cellrenderer():
+def get_svg_cellrenderer() -> JsCode:
     """
     JavaScript cell renderer to correctly render HTML/SVG in AgGrid cells.
     """
@@ -113,7 +116,7 @@ def get_svg_cellrenderer():
         }
     """)
 
-def build_aggrid_options(df: pd.DataFrame):
+def build_aggrid_options(df: pd.DataFrame) -> dict:
     """
     Build AgGrid options with explicit header wrapping and column sizing.
     """
@@ -219,7 +222,7 @@ def build_aggrid_options(df: pd.DataFrame):
     
     return grid_options
 
-def display_aggrid_table(df: pd.DataFrame, grid_options: dict):
+def display_aggrid_table(df: pd.DataFrame, grid_options: dict) -> None:
     """
     Render the DataFrame in AgGrid, left-aligned with custom header styling.
     """
@@ -237,38 +240,54 @@ def display_aggrid_table(df: pd.DataFrame, grid_options: dict):
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-def load_data(uploaded_file):
-    """Load SDF or CSV file and return as DataFrame."""
-    file_type = uploaded_file.name.split('.')[-1].lower()
-    if file_type == 'sdf':
-        df = PandasTools.LoadSDF(uploaded_file, smilesName='SMILES', includeFingerprints=False)
-    elif file_type == 'csv':
-        df = pd.read_csv(uploaded_file)
-        if 'SMILES' not in df.columns:
-            st.error("CSV must contain a 'SMILES' column.")
-            st.stop()
-    else:
-        st.error("Unsupported file type.")
-        st.stop()
+@st.cache_data
+def load_data(file_bytes: bytes, file_name: str) -> pd.DataFrame:
+    """Load SDF or CSV data from the uploaded file bytes."""
+    file_type = file_name.split('.')[-1].lower()
+    try:
+        if file_type == 'sdf':
+            df = PandasTools.LoadSDF(
+                BytesIO(file_bytes), smilesName='SMILES', includeFingerprints=False
+            )
+        elif file_type == 'csv':
+            df = pd.read_csv(BytesIO(file_bytes))
+        else:
+            raise ValueError("Unsupported file type.")
+    except Exception as e:
+        raise RuntimeError(f"Failed to load file: {e}") from e
+
     if 'SMILES' not in df.columns:
-        st.error("No SMILES found.")
-        st.stop()
+        raise ValueError("No SMILES column found.")
+
     return df
 
-def main():
+def setup_page() -> None:
+    """Configure the Streamlit page and apply custom styling."""
     st.set_page_config(layout="wide")
     st.title("SDF/CSV Molecule Viewer with AgGrid")
     set_custom_aggrid_css()
 
-    uploaded_file = st.file_uploader("Upload a file (.sdf or .csv)", type=['sdf', 'csv'])
 
+def process_uploaded_file(uploaded_file: UploadedFile) -> None:
+    """Load, filter and display the uploaded file."""
+    try:
+        raw_df = load_data(uploaded_file.getvalue(), uploaded_file.name)
+    except Exception as e:
+        st.error(str(e))
+        return
+
+    df = prepare_dataframe(raw_df)
+    df_filtered = filter_dataframe(df)
+    grid_options = build_aggrid_options(df_filtered)
+    st.subheader("Filtered Data with Molecule Images")
+    display_aggrid_table(df_filtered, grid_options)
+
+
+def main() -> None:
+    setup_page()
+    uploaded_file = st.file_uploader("Upload a file (.sdf or .csv)", type=['sdf', 'csv'])
     if uploaded_file:
-        raw_df = load_data(uploaded_file)
-        df = prepare_dataframe(raw_df)
-        df_filtered = filter_dataframe(df)
-        grid_options = build_aggrid_options(df_filtered)
-        st.subheader("Filtered Data with Molecule Images")
-        display_aggrid_table(df_filtered, grid_options)
+        process_uploaded_file(uploaded_file)
 
 if __name__ == "__main__":
     main()
